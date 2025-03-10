@@ -49,7 +49,30 @@ export function useTransactions() {
       }
     };
 
+    // Initial fetch
     fetchTransactions();
+
+    // Set up real-time subscription
+    const subscription = supabase
+      .channel('transactions-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        async (payload) => {
+          // Refetch all transactions to ensure we have the latest data
+          await fetchTransactions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [session]);
 
   const addTransaction = async (transaction: Omit<Transaction, 'id' | 'date'>) => {
@@ -86,17 +109,8 @@ export function useTransactions() {
 
       if (error) throw error;
 
-      const newTransaction: Transaction = {
-        id: data.id,
-        title: data.title,
-        amount: data.amount,
-        type: data.type,
-        category: transaction.category,
-        date: new Date(data.date),
-      };
-
-      setTransactions(prev => [newTransaction, ...prev]);
-      return newTransaction;
+      // No need to manually update state as the subscription will handle it
+      return data;
     } catch (err) {
       console.error('Error adding transaction:', err);
       setError(err instanceof Error ? err.message : 'Failed to add transaction');
@@ -163,7 +177,47 @@ export function useCategories() {
       }
     };
 
+    // Initial fetch
     fetchCategories();
+
+    // Set up real-time subscription for both transactions and categories
+    const subscriptions = [
+      supabase
+        .channel('categories-channel')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'categories',
+            filter: `user_id=eq.${session.user.id}`,
+          },
+          async () => {
+            await fetchCategories();
+          }
+        )
+        .subscribe(),
+
+      supabase
+        .channel('transactions-categories-channel')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'transactions',
+            filter: `user_id=eq.${session.user.id}`,
+          },
+          async () => {
+            await fetchCategories();
+          }
+        )
+        .subscribe(),
+    ];
+
+    return () => {
+      subscriptions.forEach(subscription => subscription.unsubscribe());
+    };
   }, [session]);
 
   const addCategory = async (category: Omit<Category, 'id' | 'spent'>) => {
@@ -183,16 +237,8 @@ export function useCategories() {
 
       if (error) throw error;
 
-      const newCategory: Category = {
-        id: data.id,
-        name: data.name,
-        limit: data.budget_limit,
-        spent: 0,
-        budgetType: data.budget_type,
-      };
-
-      setCategories(prev => [...prev, newCategory]);
-      return newCategory;
+      // No need to manually update state as the subscription will handle it
+      return data;
     } catch (err) {
       console.error('Error adding category:', err);
       setError(err instanceof Error ? err.message : 'Failed to add category');
@@ -224,7 +270,6 @@ export function useBudgetSummary() {
           .single();
 
         if (settingsError && settingsError.code !== 'PGRST116') {
-          // PGRST116 is "no rows returned" error, which we handle by creating default settings
           throw settingsError;
         }
 
@@ -319,7 +364,47 @@ export function useBudgetSummary() {
       }
     };
 
+    // Initial fetch
     fetchBudgetSummary();
+
+    // Set up real-time subscriptions for all relevant tables
+    const subscriptions = [
+      supabase
+        .channel('budget-settings-channel')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'budget_settings',
+            filter: `user_id=eq.${session.user.id}`,
+          },
+          async () => {
+            await fetchBudgetSummary();
+          }
+        )
+        .subscribe(),
+
+      supabase
+        .channel('transactions-budget-channel')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'transactions',
+            filter: `user_id=eq.${session.user.id}`,
+          },
+          async () => {
+            await fetchBudgetSummary();
+          }
+        )
+        .subscribe(),
+    ];
+
+    return () => {
+      subscriptions.forEach(subscription => subscription.unsubscribe());
+    };
   }, [session]);
 
   const updateIncome = async (income: number) => {
@@ -335,29 +420,7 @@ export function useBudgetSummary() {
 
       if (error) throw error;
 
-      if (budgetSummary) {
-        const needsLimit = (income * data.needs_percentage) / 100;
-        const wantsLimit = (income * data.wants_percentage) / 100;
-        const savingsLimit = (income * data.savings_percentage) / 100;
-
-        setBudgetSummary({
-          ...budgetSummary,
-          income,
-          needs: {
-            ...budgetSummary.needs,
-            limit: needsLimit,
-          },
-          wants: {
-            ...budgetSummary.wants,
-            limit: wantsLimit,
-          },
-          savings: {
-            ...budgetSummary.savings,
-            limit: savingsLimit,
-          },
-        });
-      }
-
+      // No need to manually update state as the subscription will handle it
       return data;
     } catch (err) {
       console.error('Error updating income:', err);

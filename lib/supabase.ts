@@ -1,18 +1,18 @@
 import 'react-native-url-polyfill/auto';
-import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
+import secureStore from './secureStore';
 
 // SecureStore adapter for Supabase auth
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => {
-    return SecureStore.getItemAsync(key);
+    return secureStore.getItemAsync(key);
   },
   setItem: (key: string, value: string) => {
-    return SecureStore.setItemAsync(key, value);
+    return secureStore.setItemAsync(key, value);
   },
   removeItem: (key: string) => {
-    return SecureStore.deleteItemAsync(key);
+    return secureStore.deleteItemAsync(key);
   },
 };
 
